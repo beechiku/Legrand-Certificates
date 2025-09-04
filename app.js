@@ -43,11 +43,9 @@
   }
 
   function renderList(lot, items, primary){
-    const grid = document.createElement('div');
-    grid.className = 'grid';
+    const grid = document.createElement('div'); grid.className = 'grid';
     const panel = document.createElement('div');
-    const links = document.createElement('div');
-    links.className = 'links';
+    const links = document.createElement('div'); links.className = 'links';
 
     function select(item, el){
       grid.querySelectorAll('.thumb').forEach(x => x.classList.remove('active'));
@@ -72,12 +70,14 @@
         panel.appendChild(embed);
       } else {
         const img = document.createElement('img');
+        // Try Drive "view" first; if it fails (onerror), fall back to googleusercontent direct.
         img.src = item.view;
         img.alt = 'Certificate image';
         img.style.maxWidth = '100%';
         img.style.height = 'auto';
         img.style.border = '1px solid var(--border)';
         img.style.borderRadius = '12px';
+        img.onerror = () => { if (img.src !== item.image) img.src = item.image; };
         panel.appendChild(img);
       }
     }
@@ -87,9 +87,13 @@
       card.className = 'thumb';
       card.title = it.name;
       const lower = it.name.toLowerCase();
-      const imgHtml = lower.endsWith('.pdf')
-        ? `<div style="display:flex;align-items:center;justify-content:center;height:140px">PDF</div>`
-        : `<img src="${it.view}" alt="thumb">`;
+      let imgHtml;
+      if (lower.endsWith('.pdf')) {
+        imgHtml = `<div style="display:flex;align-items:center;justify-content:center;height:140px">PDF</div>`;
+      } else {
+        const thumb = it.thumb || it.view || it.image;
+        imgHtml = `<img src="${thumb}" alt="thumb" onerror="this.onerror=null; this.src='${(it.image || '').replace(/'/g, "\\'")}';">`;
+      }
       card.innerHTML = `${imgHtml}<div class="name mono">${escapeHtml(it.name)}</div>`;
       card.onclick = () => select(it, card);
       grid.appendChild(card);
