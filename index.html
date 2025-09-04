@@ -21,7 +21,7 @@
   .err{color:var(--danger);margin:8px 0;font-weight:600}
   .links{display:flex;gap:10px;align-items:center;margin:8px 0 12px;flex-wrap:wrap}
   .links a{color:var(--accent);text-decoration:none}
-  .links a:hover{ text-decoration:underline }
+  .links a:hover{text-decoration:underline}
   .embed{width:100%;height:72vh;border:1px solid var(--border);border-radius:12px;background:#0001}
   .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px}
 </style>
@@ -32,18 +32,18 @@
   <div class="card">
     <form id="f" class="row">
       <label for="lot" class="mono">LOT #</label>
-      <input id="lot" placeholder="e.g., 1316261" required />
+      <input id="lot" placeholder="e.g., 1316261" required autocomplete="off" />
       <button type="submit">Find</button>
       <button type="button" id="clear" class="ghost">Clear</button>
       <span id="status" class="pill" aria-live="polite"></span>
     </form>
-    <div class="hint">Files must be named as LOT (e.g., 1316261.pdf / .jpg / .png) inside your Drive folder.</div>
+    <div class="hint">Type a LOT number. This page calls your Google Apps Script and embeds the Drive preview.</div>
     <div id="result"></div>
   </div>
 </div>
 
 <script>
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzMQLSmm3GTgyVtM01QcRXleNAvA70Yow1Kk2rmAI1Yp2cwwpsh6eIFU4_O5wVuHRwL/exec";
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxD5brjQDiZqZzl_lX-a29HEBCyJj6XrjRL9FHxcdqb7c5Sw44zLukGNGaKIsi1rNln/exec";
 
 const $ = (s)=>document.querySelector(s);
 const lotInput = $('#lot'), resultEl = $('#result'), statusEl = $('#status');
@@ -71,14 +71,12 @@ async function lookup(lotRaw){
     const u = new URL(SCRIPT_URL);
     u.searchParams.set('lot', lot);
     const data = await jsonp(u.toString());
-    if (data && data.notFound){
-      setStatus('Not found', true);
-      resultEl.innerHTML = `<div class="err">No certificate found for LOT <span class="mono">${escapeHtml(lot)}</span>.</div>`;
+    if (!data || data.ok === false){
+      const msg = (data && (data.error || (data.notFound && 'Not found'))) || 'Lookup failed';
+      setStatus(msg, true);
+      resultEl.innerHTML = `<div class="err">${{escapeHtml(msg)}} for LOT <span class="mono">${{escapeHtml(lot)}}</span>.</div>`;
       updateUrl(lot);
       return;
-    }
-    if (data && data.error){
-      throw new Error(data.error);
     }
     setStatus('Loaded');
     render(data);
@@ -93,14 +91,14 @@ function render(d){
   const preview = d.preview, file = d.open, view = d.view;
   resultEl.innerHTML = `
     <div class="links">
-      <div>LOT <strong>${escapeHtml(d.lot)}</strong></div>
-      <span class="mono">FILE_ID:</span> <span class="mono">${escapeHtml(d.fileId)}</span>
-      <a href="${file}" target="_blank" rel="noopener">Open in Drive</a>
-      <a href="${view}" target="_blank" rel="noopener">Direct view</a>
-      <a href="${preview}" target="_blank" rel="noopener">Preview URL</a>
+      <div>LOT <strong>${{escapeHtml(d.lot)}}</strong></div>
+      <span class="mono">FILE_ID:</span> <span class="mono">${{escapeHtml(d.fileId)}}</span>
+      <a href="${{file}}" target="_blank" rel="noopener">Open in Drive</a>
+      <a href="${{view}}" target="_blank" rel="noopener">Direct view</a>
+      <a href="${{preview}}" target="_blank" rel="noopener">Preview URL</a>
       <a id="copyLink" href="#" role="button">Copy sharable page link</a>
     </div>
-    <embed class="embed" src="${preview}" type="application/pdf" />
+    <embed class="embed" src="${{preview}}" type="application/pdf" />
   `;
   const btn = document.getElementById('copyLink');
   if(btn){
