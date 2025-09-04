@@ -4,18 +4,16 @@
 <meta charset="utf-8" />
 <title>Legrand Certificate Lookup</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="light dark" />
 <style>
   :root { --bg:#fff; --fg:#111; --muted:#666; --border:#ddd; --accent:#0d6efd; --danger:#b00020; }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg:#0b0c0f; --fg:#e7e7e7; --muted:#a0a0a0; --border:#2a2c33; --accent:#4da3ff; --danger:#ff6b7a; }
-  }
-  html,body{height:100%}
+  @media (prefers-color-scheme: dark) { :root { --bg:#0b0c0f; --fg:#e7e7e7; --muted:#a0a0a0; --border:#2a2c33; --accent:#4da3ff; --danger:#ff6b7a; } }
   body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;background:var(--bg);color:var(--fg)}
   .wrap{max-width:900px;margin:0 auto;padding:20px}
   h1{margin:0 0 10px}
   .card{border:1px solid var(--border);border-radius:12px;padding:16px}
   .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-  input{padding:10px 12px;font-size:16px;border:1px solid var(--border);border-radius:10px;background:var(--bg);color:var(--fg);width:260px}
+  input{padding:10px 12px;font-size:16px;border:1px solid var(--border);border-radius:10px;width:260px;background:var(--bg);color:var(--fg)}
   button{padding:10px 14px;font-size:16px;border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:10px;cursor:pointer}
   .ghost{background:transparent;color:var(--accent)}
   .pill{font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:999px;color:var(--muted)}
@@ -24,7 +22,7 @@
   .links{display:flex;gap:10px;align-items:center;margin:8px 0 12px;flex-wrap:wrap}
   .links a{color:var(--accent);text-decoration:none}
   .links a:hover{text-decoration:underline}
-  .embed{width:100%;height:72vh;border:1px solid var(--border);border-radius:12px;background:#00000008}
+  .embed{width:100%;height:72vh;border:1px solid var(--border);border-radius:12px;background:#0001}
   .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px}
 </style>
 </head>
@@ -39,52 +37,64 @@
       <button type="button" id="clear" class="ghost">Clear</button>
       <span id="status" class="pill" aria-live="polite"></span>
     </form>
-    <div class="hint">Edit the MAPPING in this file: <span class="mono">LOT → Google Drive FILE_ID</span>. Uses Drive <span class="mono">/preview</span> to embed PDFs/images.</div>
+    <div class="hint">JSONP mode (bypasses CORS). Name your Drive files as LOT (e.g., 1316261.pdf) in the folder.</div>
     <div id="result"></div>
   </div>
 </div>
 
 <script>
-const MAPPING = {
-  "1316261": "1AbCdEfGhIjKlMnOpQrStUvWxYz123456",
-  "1317002": "1ZyXwVuTsRqPoNmLkJiHgFeDcBa654321",
-  "RFA4481BD-01": "1xyZabcDEF234567ghijkLMNOP890123"
-};
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbySRDX921sTsyVL3IZmWo0vqbgbrE8uReT1CCdYyrKq-LkzwOkxQpkkff43G7qRqgsU/exec"; // Apps Script web app URL
 
-const DRIVE_PREVIEW = (id) => `https://drive.google.com/file/d/${id}/preview`;
-const DRIVE_VIEW    = (id) => `https://drive.google.com/uc?export=view&id=${id}`;
-const DRIVE_FILE    = (id) => `https://drive.google.com/file/d/${id}/view`;
+const $ = (s)=>document.querySelector(s);
+const lotInput = $('#lot'), resultEl = $('#result'), statusEl = $('#status');
 
-const $ = (s) => document.querySelector(s);
-const lotInput = $('#lot');
-const resultEl = $('#result');
-const statusEl = $('#status');
+function setStatus(t,isErr=false){ statusEl.textContent=t||''; statusEl.style.borderColor=isErr?'var(--danger)':'var(--border)'; statusEl.style.color=isErr?'var(--danger)':'var(--muted)'; }
+function escapeHtml(s){ return String(s).replace(/[&<>\"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'" :'&#39;'}[m])); }
 
-function setStatus(text, isError=false){
-  statusEl.textContent = text||'';
-  statusEl.style.borderColor = isError ? 'var(--danger)' : 'var(--border)';
-  statusEl.style.color = isError ? 'var(--danger)' : 'var(--muted)';
+function jsonp(url){
+  return new Promise((resolve, reject)=>{
+    const cb = 'cb_' + Math.random().toString(36).slice(2);
+    window[cb] = (data)=>{ delete window[cb]; resolve(data); };
+    const s = document.createElement('script');
+    s.src = url + (url.includes('?') ? '&' : '?') + 'callback=' + cb;
+    s.onerror = ()=>{ delete window[cb]; reject(new Error('JSONP load error')); };
+    document.body.appendChild(s);
+  });
 }
 
-function escapeHtml(s){
-  return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+async function lookup(lotRaw){
+  const lot = String(lotRaw||'').trim();
+  if(!lot) return;
+  setStatus('Searching…');
+  resultEl.innerHTML='';
+  try{
+    const u = new URL(SCRIPT_URL);
+    u.searchParams.set('lot', lot);
+    const data = await jsonp(u.toString());
+    if (data && data.notFound){
+      setStatus('Not found', true);
+      resultEl.innerHTML = `<div class="err">No certificate found for LOT <span class="mono">${escapeHtml(lot)}</span>.</div>`;
+      updateUrl(lot);
+      return;
+    }
+    if (data && data.error){
+      throw new Error(data.error);
+    }
+    setStatus('Loaded');
+    render(data);
+    updateUrl(lot);
+  }catch(err){
+    setStatus('Lookup failed', true);
+    resultEl.innerHTML = `<div class="err">Lookup error. Check your Apps Script deploy & sharing. (${escapeHtml(err.message)})</div>`;
+  }
 }
 
-function renderNotFound(lot){
-  resultEl.innerHTML = `
-    <div class="err">No certificate found for LOT <span class="mono">${escapeHtml(lot)}</span>.</div>
-    <div class="hint">Add it to <span class="mono">MAPPING</span> in this file and make sure the Drive file is shared to your employees.</div>
-  `;
-}
-
-function renderEmbed(lot, fileId){
-  const preview = DRIVE_PREVIEW(fileId);
-  const view = DRIVE_VIEW(fileId);
-  const file = DRIVE_FILE(fileId);
+function render(d){
+  const preview = d.preview, file = d.open, view = d.view;
   resultEl.innerHTML = `
     <div class="links">
-      <div>LOT <strong>${escapeHtml(lot)}</strong></div>
-      <span class="mono">FILE_ID:</span> <span class="mono">${escapeHtml(fileId)}</span>
+      <div>LOT <strong>${escapeHtml(d.lot)}</strong></div>
+      <span class="mono">FILE_ID:</span> <span class="mono">${escapeHtml(d.fileId)}</span>
       <a href="${file}" target="_blank" rel="noopener">Open in Drive</a>
       <a href="${view}" target="_blank" rel="noopener">Direct view</a>
       <a href="${preview}" target="_blank" rel="noopener">Preview URL</a>
@@ -92,30 +102,20 @@ function renderEmbed(lot, fileId){
     </div>
     <embed class="embed" src="${preview}" type="application/pdf" />
   `;
-  const copyBtn = document.getElementById('copyLink');
-  if (copyBtn){
-    copyBtn.addEventListener('click', (e)=>{
+  const btn = document.getElementById('copyLink');
+  if(btn){
+    btn.addEventListener('click', (e)=>{
       e.preventDefault();
       const url = new URL(location.href);
-      url.searchParams.set('lot', lot);
+      url.searchParams.set('lot', d.lot);
       navigator.clipboard.writeText(url.toString()).then(()=>setStatus('Link copied')).catch(()=>setStatus('Copy failed', true));
     }, { once:true });
   }
 }
 
-function lookup(lotRaw){
-  const lot = String(lotRaw||'').trim();
-  if (!lot) return;
-  const key = lot.replace(/\s+/g,'').toUpperCase();
-  const fileId = MAPPING[key] ?? MAPPING[lot] ?? null;
-  if (!fileId) { renderNotFound(lot); updateUrl(lot); return; }
-  renderEmbed(lot, fileId);
-  updateUrl(lot);
-}
-
 function updateUrl(lot){
   const url = new URL(location.href);
-  if (lot) url.searchParams.set('lot', lot); else url.searchParams.delete('lot');
+  if(lot) url.searchParams.set('lot', lot); else url.searchParams.delete('lot');
   history.replaceState(null,'',url);
 }
 
