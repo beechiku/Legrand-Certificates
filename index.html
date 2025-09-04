@@ -9,7 +9,7 @@
   :root { --bg:#fff; --fg:#111; --muted:#666; --border:#ddd; --accent:#0d6efd; --danger:#b00020; }
   @media (prefers-color-scheme: dark) { :root { --bg:#0b0c0f; --fg:#e7e7e7; --muted:#a0a0a0; --border:#2a2c33; --accent:#4da3ff; --danger:#ff6b7a; } }
   body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;background:var(--bg);color:var(--fg)}
-  .wrap{max-width:900px;margin:0 auto;padding:20px}
+  .wrap{max-width:1000px;margin:0 auto;padding:20px}
   h1{margin:0 0 10px}
   .card{border:1px solid var(--border);border-radius:12px;padding:16px}
   .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
@@ -24,6 +24,11 @@
   .links a:hover{text-decoration:underline}
   .embed{width:100%;height:72vh;border:1px solid var(--border);border-radius:12px;background:#0001}
   .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-top:10px}
+  .thumb{border:1px solid var(--border);border-radius:10px;padding:8px;cursor:pointer;background:transparent}
+  .thumb.active{outline:2px solid var(--accent)}
+  .thumb .name{font-size:12px;color:var(--muted);margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .thumb img{width:100%;height:140px;object-fit:contain;background:#fafafa;border-radius:6px}
 </style>
 </head>
 <body>
@@ -32,24 +37,24 @@
   <div class="card">
     <form id="f" class="row">
       <label for="lot" class="mono">LOT #</label>
-      <input id="lot" placeholder="e.g., 1316261" required autocomplete="off" />
+      <input id="lot" placeholder="7-digit LOT (e.g., 1234567)" required autocomplete="off" />
       <button type="submit">Find</button>
       <button type="button" id="clear" class="ghost">Clear</button>
       <span id="status" class="pill" aria-live="polite"></span>
     </form>
-    <div class="hint">Type a LOT number. This page calls your Google Apps Script and embeds the Drive preview.</div>
+    <div class="hint">Supports prefixes (for &lt;1,000,000): <code>0</code> or <code>_</code>; and suffixes like <code>-1</code>, <code>c</code>, <code>(c)</code>. Multiple matches show below — click to preview.</div>
     <div id="result"></div>
   </div>
 </div>
 
 <script>
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxIGE7rpa9Gaw7jrFaRoVtqX_lV08rxOjSh0k_e2dulBn3lVEp9GP2ESkosV5PDlhEC/exec";
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycby4Y-KYjp8D4G1Gl159CKX6WyurGkTF8pO8kWhwS80PdaI4wPP3EA_HGXe-YxoxfRmA/exec";
 
 const $ = (s)=>document.querySelector(s);
 const lotInput = $('#lot'), resultEl = $('#result'), statusEl = $('#status');
 
 function setStatus(t,isErr=false){ statusEl.textContent=t||''; statusEl.style.borderColor=isErr?'var(--danger)':'var(--border)'; statusEl.style.color=isErr?'var(--danger)':'var(--muted)'; }
-function escapeHtml(s){ return String(s).replace(/[&<>\"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'" :'&#39;'}[m])); }
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 
 function jsonp(url){
   return new Promise((resolve, reject)=>{
@@ -71,15 +76,15 @@ async function lookup(lotRaw){
     const u = new URL(SCRIPT_URL);
     u.searchParams.set('lot', lot);
     const data = await jsonp(u.toString());
-    if (!data || data.ok === false){
+    if (!data || data.ok === false) {
       const msg = (data && (data.error || (data.notFound && 'Not found'))) || 'Lookup failed';
       setStatus(msg, true);
-      resultEl.innerHTML = `<div class="err">${{escapeHtml(msg)}} for LOT <span class="mono">${{escapeHtml(lot)}}</span>.</div>`;
+      resultEl.innerHTML = `<div class="err">${escapeHtml(msg)} for LOT <span class="mono">${escapeHtml(lot)}</span>.</div>`;
       updateUrl(lot);
       return;
     }
-    setStatus('Loaded');
-    render(data);
+    setStatus(`Found ${data.count} file(s)`);
+    renderList(lot, data.items, data.primary);
     updateUrl(lot);
   }catch(err){
     setStatus('Lookup failed', true);
@@ -87,28 +92,67 @@ async function lookup(lotRaw){
   }
 }
 
-function render(d){
-  const preview = d.preview, file = d.open, view = d.view;
-  resultEl.innerHTML = `
-    <div class="links">
-      <div>LOT <strong>${{escapeHtml(d.lot)}}</strong></div>
-      <span class="mono">FILE_ID:</span> <span class="mono">${{escapeHtml(d.fileId)}}</span>
-      <a href="${{file}}" target="_blank" rel="noopener">Open in Drive</a>
-      <a href="${{view}}" target="_blank" rel="noopener">Direct view</a>
-      <a href="${{preview}}" target="_blank" rel="noopener">Preview URL</a>
-      <a id="copyLink" href="#" role="button">Copy sharable page link</a>
-    </div>
-    <embed class="embed" src="${{preview}}" type="application/pdf" />
-  `;
-  const btn = document.getElementById('copyLink');
-  if(btn){
-    btn.addEventListener('click', (e)=>{
-      e.preventDefault();
-      const url = new URL(location.href);
-      url.searchParams.set('lot', d.lot);
-      navigator.clipboard.writeText(url.toString()).then(()=>setStatus('Link copied')).catch(()=>setStatus('Copy failed', true));
-    }, { once:true });
+function renderList(lot, items, primary){
+  const grid = document.createElement('div');
+  grid.className = 'grid';
+  const panel = document.createElement('div');
+  const links = document.createElement('div');
+  links.className = 'links';
+
+  function select(item, el){
+    grid.querySelectorAll('.thumb').forEach(x => x.classList.remove('active'));
+    if (el) el.classList.add('active');
+
+    links.innerHTML = `
+      <div>LOT <strong>${escapeHtml(lot)}</strong></div>
+      <span class="mono">FILE_ID:</span> <span class="mono">${escapeHtml(item.fileId)}</span>
+      <a href="${item.open}" target="_blank" rel="noopener">Open in Drive</a>
+      <a href="${item.view}" target="_blank" rel="noopener">Direct view</a>
+      <a href="${item.preview}" target="_blank" rel="noopener">Preview URL</a>
+    `;
+
+    panel.innerHTML = '';
+    panel.appendChild(links);
+    const lower = item.name.toLowerCase();
+    if (lower.endsWith('.pdf')) {
+      const embed = document.createElement('embed');
+      embed.className = 'embed';
+      embed.type = 'application/pdf';
+      embed.src = item.preview;
+      panel.appendChild(embed);
+    } else {
+      const img = document.createElement('img');
+      img.src = item.view;
+      img.alt = 'Certificate image';
+      img.style.maxWidth = '100%';
+      img.style.height = 'auto';
+      img.style.border = '1px solid var(--border)';
+      img.style.borderRadius = '12px';
+      panel.appendChild(img);
+    }
   }
+
+  items.forEach((it) => {
+    const card = document.createElement('div');
+    card.className = 'thumb';
+    card.title = it.name;
+    const lower = it.name.toLowerCase();
+    const imgHtml = lower.endsWith('.pdf')
+      ? `<div style="display:flex;align-items:center;justify-content:center;height:140px">PDF</div>`
+      : `<img src="${it.view}" alt="thumb">`;
+    card.innerHTML = `${imgHtml}<div class="name mono">${escapeHtml(it.name)}</div>`;
+    card.onclick = () => select(it, card);
+    grid.appendChild(card);
+  });
+
+  resultEl.innerHTML = '';
+  resultEl.appendChild(grid);
+  resultEl.appendChild(panel);
+
+  // initial selection
+  const first = primary || items[0];
+  const firstEl = Array.from(grid.children).find(c => c.title === first.name) || grid.children[0];
+  select(first, firstEl);
 }
 
 function updateUrl(lot){
