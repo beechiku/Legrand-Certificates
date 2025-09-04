@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Legrand Certificate Lookup</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="light dark" />
+<style>
+  :root { --bg:#fff; --fg:#111; --muted:#666; --border:#ddd; --accent:#0d6efd; --danger:#b00020; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0b0c0f; --fg:#e7e7e7; --muted:#a0a0a0; --border:#2a2c33; --accent:#4da3ff; --danger:#ff6b7a; } }
+  body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;background:var(--bg);color:var(--fg)}
+  .wrap{max-width:900px;margin:0 auto;padding:20px}
+  h1{margin:0 0 10px}
+  .card{border:1px solid var(--border);border-radius:12px;padding:16px}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  input{padding:10px 12px;font-size:16px;border:1px solid var(--border);border-radius:10px;width:260px;background:var(--bg);color:var(--fg)}
+  button{padding:10px 14px;font-size:16px;border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:10px;cursor:pointer}
+  .ghost{background:transparent;color:var(--accent)}
+  .pill{font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:999px;color:var(--muted)}
+  .hint{color:var(--muted);font-size:12px;margin-top:6px}
+  .err{color:var(--danger);margin:8px 0;font-weight:600}
+  .links{display:flex;gap:10px;align-items:center;margin:8px 0 12px;flex-wrap:wrap}
+  .links a{color:var(--accent);text-decoration:none}
+  .links a:hover{text-decoration:underline}
+  .embed{width:100%;height:72vh;border:1px solid var(--border);border-radius:12px;background:#0001}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Legrand Certificate Lookup</h1>
+  <div class="card">
+    <form id="f" class="row">
+      <label for="lot" class="mono">LOT #</label>
+      <input id="lot" placeholder="e.g., 1316261" required />
+      <button type="submit">Find</button>
+      <button type="button" id="clear" class="ghost">Clear</button>
+      <span id="status" class="pill" aria-live="polite"></span>
+    </form>
+    <div class="hint">Files must be named as LOT (e.g., 1316261.pdf) in your Drive folder.</div>
+    <div id="result"></div>
+  </div>
+</div>
+
+<script>
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbySRDX921sTsyVL3IZmWo0vqbgbrE8uReT1CCdYyrKq-LkzwOkxQpkkff43G7qRqgsU/exec";
+
+const $ = (s)=>document.querySelector(s);
+const lotInput = $('#lot'), resultEl = $('#result'), statusEl = $('#status');
+
+function setStatus(t,isErr=false){ statusEl.textContent=t||''; statusEl.style.borderColor=isErr?'var(--danger)':'var(--border)'; statusEl.style.color=isErr?'var(--danger)':'var(--muted)'; }
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+async function lookup(lotRaw){
+  const lot = String(lotRaw||'').trim();
+  if(!lot) return;
+  setStatus('Searching…');
+  resultEl.innerHTML='';
+  try{
+    const u = new URL(SCRIPT_URL);
+    u.searchParams.set('lot', lot);
+    const res = await fetch(u.toString(), { method:'GET', mode:'cors', cache:'no-store' });
+    if(res.status === 404){
+      setStatus('Not found', true);
+      resultEl.innerHTML = `<div class="err">No certificate found for LOT <span class="mono">${escapeHtml(lot)}</span>.</div>`;
+      updateUrl(lot);
+      return;
+    }
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const data = await res.json();
+    setStatus('Loaded');
+    render(data);
+    updateUrl(lot);
+  }catch(err){
+    setStatus('Lookup failed', true);
+    resultEl.innerHTML = `<div class="err">Lookup error. Check your Apps Script deployment & access settings.</div>`;
+  }
+}
+
+function render(d){
+  const preview = d.preview, file = d.open, view = d.view;
+  resultEl.innerHTML = `
+    <div class="links">
+      <div>LOT <strong>${escapeHtml(d.lot)}</strong></div>
+      <span class="mono">FILE_ID:</span> <span class="mono">${escapeHtml(d.fileId)}</span>
+      <a href="${file}" target="_blank" rel="noopener">Open in Drive</a>
+      <a href="${view}" target="_blank" rel="noopener">Direct view</a>
+      <a href="${preview}" target="_blank" rel="noopener">Preview URL</a>
+      <a id="copyLink" href="#" role="button">Copy sharable page link</a>
+    </div>
+    <embed class="embed" src="${preview}" type="application/pdf" />
+  `;
+  const btn = document.getElementById('copyLink');
+  if(btn){
+    btn.addEventListener('click', (e)=>{
+      e.preventDefault();
+      const url = new URL(location.href);
+      url.searchParams.set('lot', d.lot);
+      navigator.clipboard.writeText(url.toString()).then(()=>setStatus('Link copied')).catch(()=>setStatus('Copy failed', true));
+    }, { once:true });
+  }
+}
+
+function updateUrl(lot){
+  const url = new URL(location.href);
+  if(lot) url.searchParams.set('lot', lot); else url.searchParams.delete('lot');
+  history.replaceState(null,'',url);
+}
+
+document.getElementById('f').addEventListener('submit', (e)=>{ e.preventDefault(); lookup(lotInput.value); });
+document.getElementById('clear').addEventListener('click', ()=>{ lotInput.value=''; resultEl.innerHTML=''; setStatus(''); updateUrl(''); lotInput.focus(); });
+
+(function(){
+  const q = new URLSearchParams(location.search).get('lot') || '';
+  if (q){ lotInput.value = q; lookup(q); } else { lotInput.focus(); }
+})();
+</script>
+</body>
+</html>
