@@ -37,13 +37,14 @@
       <button type="button" id="clear" class="ghost">Clear</button>
       <span id="status" class="pill" aria-live="polite"></span>
     </form>
-    <div class="hint">JSONP mode (bypasses CORS). Name your Drive files as LOT (e.g., 1316261.pdf) in the folder.</div>
+    <div class="hint">Files must be named as LOT (e.g., 1316261.pdf / .jpg / .png) inside your Drive folder.</div>
     <div id="result"></div>
   </div>
 </div>
 
 <script>
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyeHYi_2_QGHqAKNNyWESq8zaudyn3I_1kDs6v0h39EOojhTVE6fDDlx9M83HeexTme/exec"; // Apps Script web app URL
+// Your deployed Google Apps Script URL (JSONP supported)
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzoBNg0ezDzx0WgrX1h92qSlQ2QSmqfT1TdAPWiKhhpght2tb6BbECYX2Xwr68YopgE/exec";
 
 const $ = (s)=>document.querySelector(s);
 const lotInput = $('#lot'), resultEl = $('#result'), statusEl = $('#status');
